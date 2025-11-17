@@ -8,7 +8,7 @@ import trueskill
 # ---------------------------
 def calculate_team_trueskill(df, starting_mu=4, starting_sigma=1):
     ratings = {}
-    ratings["Charlie"] = trueskill.Rating(mu=5, sigma=starting_sigma)
+    ratings["Charlie"] = trueskill.Rating(mu=5.25, sigma=starting_sigma)
     for _, row in df.iterrows():
         t1_p1, t1_p2 = row['team_1_player_left'], row['team_1_player_right']
         t2_p1, t2_p2 = row['team_2_player_left'], row['team_2_player_right']
