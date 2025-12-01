@@ -40,6 +40,58 @@ def calculate_team_trueskill(df, starting_mu=4, starting_sigma=1):
     return series
 
 
+def assign_titles(ratings_series):
+    """Assign titles based on rankings:
+    - Challenger: rank 1
+    - Master: ranks 2-3
+    - Gold, Silver, Bronze: divided equally among remaining players
+    """
+    titles = {}
+    total_players = len(ratings_series)
+    
+    if total_players == 0:
+        return titles
+    
+    # Challenger: top 1
+    if total_players >= 1:
+        titles[ratings_series.index[0]] = "👑 Challenger"
+    
+    # Master: ranks 2-3
+    if total_players >= 2:
+        titles[ratings_series.index[1]] = "💎 Master"
+    if total_players >= 3:
+        titles[ratings_series.index[2]] = "💎 Master"
+    
+    # Remaining players divided into 3 equal groups: Gold, Silver, Bronze
+    remaining_players = total_players - 3
+    if remaining_players > 0:
+        players_per_tier = remaining_players / 3
+        gold_count = int(players_per_tier)
+        silver_count = int(players_per_tier)
+        bronze_count = remaining_players - gold_count - silver_count
+        
+        idx = 3
+        # Gold tier
+        for i in range(gold_count):
+            if idx < total_players:
+                titles[ratings_series.index[idx]] = "🥇 Gold"
+                idx += 1
+        
+        # Silver tier
+        for i in range(silver_count):
+            if idx < total_players:
+                titles[ratings_series.index[idx]] = "🥈 Silver"
+                idx += 1
+        
+        # Bronze tier
+        for i in range(bronze_count):
+            if idx < total_players:
+                titles[ratings_series.index[idx]] = "🥉 Bronze"
+                idx += 1
+    
+    return titles
+
+
 def get_sheet_data(spreadsheet_id, sheet_name, api_key):
     """Fetch Google Sheets data using the public API key."""
     url = f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{sheet_name}?key={api_key}"
@@ -75,6 +127,7 @@ try:
 
     with st.spinner("Calculating TrueSkill ratings..."):
         ratings = calculate_team_trueskill(df)
+        titles = assign_titles(ratings)
 
     st.success(f"✅ Loaded {len(df)} matches and calculated ratings for {len(ratings)} players!")
 
@@ -82,6 +135,8 @@ try:
     st.subheader("Player Rankings")
     ratings_df = ratings.reset_index()
     ratings_df.columns = ['Player', 'TrueSkill Rating']
+    ratings_df['Title'] = ratings_df['Player'].map(titles)
+    ratings_df = ratings_df[['Player', 'Title', 'Rating']]
     ratings_df.index = ratings_df.index + 1
     st.dataframe(ratings_df, use_container_width=True)
 
