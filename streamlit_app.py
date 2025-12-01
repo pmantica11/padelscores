@@ -54,13 +54,13 @@ def assign_titles(ratings_series):
     
     # Challenger: top 1
     if total_players >= 1:
-        titles[ratings_series.index[0]] = "👑 Challenger"
+        titles[ratings_series.index[0]] = "👑"
     
     # Master: ranks 2-3
     if total_players >= 2:
-        titles[ratings_series.index[1]] = "💎 Master"
+        titles[ratings_series.index[1]] = "💎"
     if total_players >= 3:
-        titles[ratings_series.index[2]] = "💎 Master"
+        titles[ratings_series.index[2]] = "💎"
     
     # Remaining players divided into 3 equal groups: Gold, Silver, Bronze
     remaining_players = total_players - 3
@@ -74,19 +74,19 @@ def assign_titles(ratings_series):
         # Gold tier
         for i in range(gold_count):
             if idx < total_players:
-                titles[ratings_series.index[idx]] = "🥇 Gold"
+                titles[ratings_series.index[idx]] = "🥇"
                 idx += 1
         
         # Silver tier
         for i in range(silver_count):
             if idx < total_players:
-                titles[ratings_series.index[idx]] = "🥈 Silver"
+                titles[ratings_series.index[idx]] = "🥈"
                 idx += 1
         
         # Bronze tier
         for i in range(bronze_count):
             if idx < total_players:
-                titles[ratings_series.index[idx]] = "🥉 Bronze"
+                titles[ratings_series.index[idx]] = "🥉"
                 idx += 1
     
     return titles
@@ -137,8 +137,8 @@ try:
     ratings_df.columns = ['Player', 'Rating']
     ratings_df['Title'] = ratings_df['Player'].map(titles)
     ratings_df = ratings_df[['Player', 'Title', 'Rating']]
-    ratings_df.index = ratings_df.index + 1
-    st.dataframe(ratings_df, hide_index=True, use_container_width=True, height="stretch")
+    ratings_df = ratings_df.set_index('Title')
+    st.dataframe(ratings_df, use_container_width=True, height="stretch")
 
     if st.button("🔄 Refresh Data"):
         st.rerun()
