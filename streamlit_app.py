@@ -115,7 +115,6 @@ def get_sheet_data(spreadsheet_id, sheet_name, api_key):
 # ---------------------------
 # STREAMLIT APP
 # ---------------------------
-st.title("🏓 TrueSkill Player Rankings")
 
 # Load credentials securely from Streamlit secrets
 SPREADSHEET_ID = st.secrets["SPREADSHEET_ID"]
@@ -130,8 +129,6 @@ try:
     with st.spinner("Calculating TrueSkill ratings..."):
         ratings = calculate_team_trueskill(df)
         titles = assign_titles(ratings)
-
-    st.success(f"✅ Loaded {len(df)} matches and calculated ratings for {len(ratings)} players!")
 
     # Display ratings
     st.subheader("Player Rankings")
