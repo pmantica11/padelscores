@@ -134,11 +134,11 @@ try:
     # Display ratings
     st.subheader("Player Rankings")
     ratings_df = ratings.reset_index()
-    ratings_df.columns = ['Player', 'TrueSkill Rating']
+    ratings_df.columns = ['Player', 'Rating']
     ratings_df['Title'] = ratings_df['Player'].map(titles)
     ratings_df = ratings_df[['Player', 'Title', 'Rating']]
     ratings_df.index = ratings_df.index + 1
-    st.dataframe(ratings_df, use_container_width=True)
+    st.table(ratings_df)
 
     if st.button("🔄 Refresh Data"):
         st.rerun()
