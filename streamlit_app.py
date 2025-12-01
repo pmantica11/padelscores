@@ -138,7 +138,7 @@ try:
     ratings_df['Title'] = ratings_df['Player'].map(titles)
     ratings_df = ratings_df[['Player', 'Title', 'Rating']]
     ratings_df.index = ratings_df.index + 1
-    st.dataframe(ratings_df, hide_index=True, use_container_width=True, expand=True)
+    st.dataframe(ratings_df, hide_index=True, use_container_width=True, height="stretch")
 
     if st.button("🔄 Refresh Data"):
         st.rerun()
