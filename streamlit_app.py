@@ -4,111 +4,306 @@ import pandas as pd
 import trueskill
 
 # ---------------------------
-# ELO / TrueSkill LOGIC
+# CONFIG
 # ---------------------------
+
+# First 155 matches use the original 1x behavior.
+# Match 156 onward uses 2x behavior.
+LEGACY_GAME_COUNT = 155
+NEW_GAME_MULTIPLIER = 2
+
+# These players still participate in TrueSkill calculations,
+# but are hidden from the final leaderboard.
+EXCLUDED_PLAYERS = {
+    "Roberto",
+    "MarioC",
+    "Sebastian",
+}
+
+
+# ---------------------------
+# TRUESKILL LOGIC
+# ---------------------------
+
 def calculate_team_trueskill(df, starting_mu=4, starting_sigma=1):
     ratings = {}
-    ratings["Charlie"] = trueskill.Rating(mu=5.25, sigma=starting_sigma)
-    for _, row in df.iterrows():
-        # t1_p1, t1_p2 = row['team_1_player_left'], row['team_1_player_right']
-        # t2_p1, t2_p2 = row['team_2_player_left'], row['team_2_player_right']
-        t1_p1, t1_p2 = (row['team_1_player_left'].strip(), row['team_1_player_right'].strip())
-        t2_p1, t2_p2 = (row['team_2_player_left'].strip(), row['team_2_player_right'].strip())
-        # Initialize players if not seen before
-        for p in [t1_p1, t1_p2, t2_p1, t2_p2]:
-            if p not in ratings:
-                ratings[p] = trueskill.Rating(mu=starting_mu, sigma=starting_sigma)
 
-        s1, s2 = row['team_1_score'], row['team_2_score']
+    # Special starting rating
+    ratings["Charlie"] = trueskill.Rating(
+        mu=5.25,
+        sigma=starting_sigma
+    )
 
-        # Process each individual game
-        for _ in range(s1):  # Team 1 wins
-            team1 = [ratings[t1_p1], ratings[t1_p2]]
-            team2 = [ratings[t2_p1], ratings[t2_p2]]
-            new_team1, new_team2 = trueskill.rate([team1, team2], ranks=[0, 1])
+    for game_index, (_, row) in enumerate(df.iterrows()):
+        t1_p1 = str(row["team_1_player_left"]).strip()
+        t1_p2 = str(row["team_1_player_right"]).strip()
+        t2_p1 = str(row["team_2_player_left"]).strip()
+        t2_p2 = str(row["team_2_player_right"]).strip()
+
+        players = [
+            t1_p1,
+            t1_p2,
+            t2_p1,
+            t2_p2,
+        ]
+
+        # Skip incomplete rows
+        if any(not player for player in players):
+            continue
+
+        # Initialize ALL players, including excluded players.
+        # Their matches still affect teammates and opponents.
+        for player in players:
+            if player not in ratings:
+                ratings[player] = trueskill.Rating(
+                    mu=starting_mu,
+                    sigma=starting_sigma
+                )
+
+        s1 = int(row["team_1_score"])
+        s2 = int(row["team_2_score"])
+
+        # Matches 1-155:
+        # use the original 1x behavior.
+        #
+        # Match 156 onward:
+        # process each win/loss twice.
+        multiplier = (
+            1
+            if game_index < LEGACY_GAME_COUNT
+            else NEW_GAME_MULTIPLIER
+        )
+
+        # ---------------------------
+        # TEAM 1 WINS
+        # ---------------------------
+
+        for _ in range(s1 * multiplier):
+            team1 = [
+                ratings[t1_p1],
+                ratings[t1_p2],
+            ]
+
+            team2 = [
+                ratings[t2_p1],
+                ratings[t2_p2],
+            ]
+
+            new_team1, new_team2 = trueskill.rate(
+                [team1, team2],
+                ranks=[0, 1]
+            )
+
             ratings[t1_p1], ratings[t1_p2] = new_team1
             ratings[t2_p1], ratings[t2_p2] = new_team2
 
-        for _ in range(s2):  # Team 2 wins
-            team1 = [ratings[t1_p1], ratings[t1_p2]]
-            team2 = [ratings[t2_p1], ratings[t2_p2]]
-            new_team1, new_team2 = trueskill.rate([team1, team2], ranks=[1, 0])
+        # ---------------------------
+        # TEAM 2 WINS
+        # ---------------------------
+
+        for _ in range(s2 * multiplier):
+            team1 = [
+                ratings[t1_p1],
+                ratings[t1_p2],
+            ]
+
+            team2 = [
+                ratings[t2_p1],
+                ratings[t2_p2],
+            ]
+
+            new_team1, new_team2 = trueskill.rate(
+                [team1, team2],
+                ranks=[1, 0]
+            )
+
             ratings[t1_p1], ratings[t1_p2] = new_team1
             ratings[t2_p1], ratings[t2_p2] = new_team2
 
-    ratings = {name: round(rating.mu, 2) for name, rating in ratings.items()}
-    series = pd.Series(ratings).sort_values(ascending=False)
-    return series
+    # Hide excluded players from the leaderboard,
+    # but keep their games in all rating calculations.
+    visible_ratings = {
+        name: round(rating.mu, 2)
+        for name, rating in ratings.items()
+        if name not in EXCLUDED_PLAYERS
+    }
+
+    return pd.Series(
+        visible_ratings
+    ).sort_values(ascending=False)
 
 
 def assign_titles(ratings_series):
-    """Assign titles based on rankings:
+    """
+    Assign titles based on rankings:
+
     - Challenger: rank 1
     - Master: ranks 2-3
-    - Gold, Silver, Bronze: divided equally among remaining players
+    - Gold, Silver, Bronze: divided among remaining players
     """
+
     titles = {}
     total_players = len(ratings_series)
-    
+
     if total_players == 0:
         return titles
-    
-    # Challenger: top 1
+
+    # Challenger: rank 1
     if total_players >= 1:
         titles[ratings_series.index[0]] = "👑"
-    
+
     # Master: ranks 2-3
     if total_players >= 2:
         titles[ratings_series.index[1]] = "💎"
+
     if total_players >= 3:
         titles[ratings_series.index[2]] = "💎"
-    
-    # Remaining players divided into 3 equal groups: Gold, Silver, Bronze
+
+    # Remaining players divided into:
+    # Gold, Silver, Bronze
     remaining_players = total_players - 3
+
     if remaining_players > 0:
         base_count = remaining_players // 3
         remainder = remaining_players % 3
-        # Distribute remainder: 1 extra to Brozne if remainder >= 1, 1 extra to Silver if remainder >= 2
-        bronze_count = base_count + (1 if remainder >= 1 else 0)
-        silver_count = base_count + (1 if remainder >= 2 else 0)
+
+        # Extra players go to Bronze first,
+        # then Silver.
+        bronze_count = (
+            base_count
+            + (1 if remainder >= 1 else 0)
+        )
+
+        silver_count = (
+            base_count
+            + (1 if remainder >= 2 else 0)
+        )
+
         gold_count = base_count
-        
+
         idx = 3
-        # Gold tier
-        for i in range(gold_count):
+
+        # Gold
+        for _ in range(gold_count):
             if idx < total_players:
-                titles[ratings_series.index[idx]] = "🥇"
+                titles[
+                    ratings_series.index[idx]
+                ] = "🥇"
+
                 idx += 1
-        
-        # Silver tier
-        for i in range(silver_count):
+
+        # Silver
+        for _ in range(silver_count):
             if idx < total_players:
-                titles[ratings_series.index[idx]] = "🥈"
+                titles[
+                    ratings_series.index[idx]
+                ] = "🥈"
+
                 idx += 1
-        
-        # Bronze tier
-        for i in range(bronze_count):
+
+        # Bronze
+        for _ in range(bronze_count):
             if idx < total_players:
-                titles[ratings_series.index[idx]] = "🥉"
+                titles[
+                    ratings_series.index[idx]
+                ] = "🥉"
+
                 idx += 1
-    
+
     return titles
 
 
-def get_sheet_data(spreadsheet_id, sheet_name, api_key):
-    """Fetch Google Sheets data using the public API key."""
-    url = f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{sheet_name}?key={api_key}"
-    response = requests.get(url)
+# ---------------------------
+# GOOGLE SHEETS
+# ---------------------------
+
+def get_sheet_data(
+    spreadsheet_id,
+    sheet_name,
+    api_key
+):
+    """
+    Fetch Google Sheets data using the public API key.
+    """
+
+    url = (
+        "https://sheets.googleapis.com/v4/spreadsheets/"
+        f"{spreadsheet_id}/values/{sheet_name}"
+        f"?key={api_key}"
+    )
+
+    response = requests.get(
+        url,
+        timeout=10
+    )
+
     response.raise_for_status()
+
     data = response.json()
 
     rows = data.get("values", [])
-    headers = rows[0]
-    records = rows[1:]
-    df = pd.DataFrame(records, columns=headers)
 
-    df["team_1_score"] = pd.to_numeric(df["team_1_score"])
-    df["team_2_score"] = pd.to_numeric(df["team_2_score"])
+    if not rows:
+        raise ValueError(
+            "Google Sheet returned no data."
+        )
+
+    headers = rows[0]
+
+    # Google Sheets may omit trailing blank cells.
+    # Pad every row to the same number of columns.
+    records = [
+        row + [""] * (len(headers) - len(row))
+        for row in rows[1:]
+    ]
+
+    df = pd.DataFrame(
+        records,
+        columns=headers
+    )
+
+    required_columns = [
+        "team_1_player_left",
+        "team_1_player_right",
+        "team_2_player_left",
+        "team_2_player_right",
+        "team_1_score",
+        "team_2_score",
+    ]
+
+    missing_columns = [
+        column
+        for column in required_columns
+        if column not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            "Missing required columns: "
+            + ", ".join(missing_columns)
+        )
+
+    df["team_1_score"] = pd.to_numeric(
+        df["team_1_score"],
+        errors="coerce"
+    )
+
+    df["team_2_score"] = pd.to_numeric(
+        df["team_2_score"],
+        errors="coerce"
+    )
+
+    # Remove rows without valid scores.
+    df = df.dropna(
+        subset=[
+            "team_1_score",
+            "team_2_score",
+        ]
+    )
+
+    # Reset index so the first 155 valid rows
+    # are always the legacy matches.
+    df = df.reset_index(drop=True)
 
     return df
 
@@ -117,29 +312,78 @@ def get_sheet_data(spreadsheet_id, sheet_name, api_key):
 # STREAMLIT APP
 # ---------------------------
 
-# Load credentials securely from Streamlit secrets
+# Load credentials securely from Streamlit secrets.
 SPREADSHEET_ID = st.secrets["SPREADSHEET_ID"]
 SHEET_NAME = st.secrets["SHEET_NAME"]
 API_KEY = st.secrets["API_KEY"]
 
-# Fetch and calculate ratings
-try:
-    with st.spinner("Fetching data from Google Sheets..."):
-        df = get_sheet_data(SPREADSHEET_ID, SHEET_NAME, API_KEY)
 
-    with st.spinner("Calculating TrueSkill ratings..."):
+try:
+    # ---------------------------
+    # FETCH DATA
+    # ---------------------------
+
+    with st.spinner(
+        "Fetching data from Google Sheets..."
+    ):
+        df = get_sheet_data(
+            SPREADSHEET_ID,
+            SHEET_NAME,
+            API_KEY
+        )
+
+    # ---------------------------
+    # CALCULATE RATINGS
+    # ---------------------------
+
+    with st.spinner(
+        "Calculating TrueSkill ratings..."
+    ):
         ratings = calculate_team_trueskill(df)
         titles = assign_titles(ratings)
 
-    # Display ratings
+    # ---------------------------
+    # DISPLAY RANKINGS
+    # ---------------------------
+
     st.subheader("Player Rankings")
-    ratings_df = ratings.reset_index()
-    ratings_df.columns = ['Player', 'Rating']
-    ratings_df['Title'] = ratings_df['Player'].map(titles)
-    ratings_df = ratings_df[['Player', 'Title', 'Rating']]
-    ratings_df = ratings_df.set_index('Title')
-    st.dataframe(ratings_df, height="stretch")
+
+    ratings_df = (
+        ratings
+        .rename("Rating")
+        .reset_index()
+    )
+
+    ratings_df.columns = [
+        "Player",
+        "Rating",
+    ]
+
+    ratings_df["Title"] = (
+        ratings_df["Player"].map(titles)
+    )
+
+    ratings_df = ratings_df[
+        [
+            "Player",
+            "Title",
+            "Rating",
+        ]
+    ]
+
+    st.dataframe(
+        ratings_df,
+        hide_index=True,
+        use_container_width=True
+    )
+
 
 except Exception as e:
-    st.error(f"Error: {str(e)}")
-    st.info("Please check your Google Sheets credentials in Streamlit secrets.")
+    st.error(
+        f"Error: {str(e)}"
+    )
+
+    st.info(
+        "Please check your Google Sheets "
+        "credentials in Streamlit secrets."
+    )
